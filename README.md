@@ -135,7 +135,7 @@ pio run -d src/firmware/esp-display-code-pet -e lilygo_t_display_s3 -t upload
 
 For ESP8266 OLED boards, set `CODE_PET_WIFI_SSID`, `CODE_PET_WIFI_PASSWORD`, and `CODE_PET_BRIDGE_URL` in `src/firmware/esp-display-code-pet/platformio.ini` so the device can poll `/api/device-snapshot`.
 
-Technical details such as project structure, local endpoints, BLE / Wi-Fi behavior, and hook mapping live in [AGENT.MD](AGENT.MD). The hardware protocol is documented in [docs/protocol.md](docs/protocol.md).
+Technical details such as project structure, local endpoints, BLE / Wi-Fi behavior, and hook mapping live in [AGENT.MD](AGENT.MD). Protocol documentation starts at the [protocol index](docs/protocol.md), then splits into the [IDE / Agent protocol](docs/ide-protocol.md) and the [hardware protocol](docs/hardware-protocol.md). Chinese versions are available for the [IDE / Agent protocol](docs/ide-protocol.zh-CN.md) and [hardware protocol](docs/hardware-protocol.zh-CN.md).
 
 ## Sponsor
 

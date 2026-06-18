@@ -135,7 +135,7 @@ pio run -d src/firmware/esp-display-code-pet -e lilygo_t_display_s3 -t upload
 
 ESP8266 OLED デバイスでは、`src/firmware/esp-display-code-pet/platformio.ini` に `CODE_PET_WIFI_SSID`、`CODE_PET_WIFI_PASSWORD`、`CODE_PET_BRIDGE_URL` を設定してください。デバイスは `/api/device-snapshot` をポーリングしてデスクトップの状態を同期します。
 
-プロジェクト構成、ローカルエンドポイント、BLE / Wi-Fi の動作、hook のマッピングなどの技術情報は [AGENT.MD](AGENT.MD) を参照してください。ハードウェアプロトコルは [docs/protocol.md](docs/protocol.md) にあります。
+プロジェクト構成、ローカルエンドポイント、BLE / Wi-Fi の動作、hook のマッピングなどの技術情報は [AGENT.MD](AGENT.MD) を参照してください。プロトコル文書は [protocol index](docs/protocol.md)、[IDE / Agent protocol](docs/ide-protocol.md)、[hardware protocol](docs/hardware-protocol.md) に分かれています。中国語版は [IDE / Agent 協議](docs/ide-protocol.zh-CN.md) と [硬件協議](docs/hardware-protocol.zh-CN.md) です。
 
 ## スポンサー
 

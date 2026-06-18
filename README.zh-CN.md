@@ -135,7 +135,7 @@ pio run -d src/firmware/esp-display-code-pet -e lilygo_t_display_s3 -t upload
 
 ESP8266 OLED 设备需要在 `src/firmware/esp-display-code-pet/platformio.ini` 中填写 `CODE_PET_WIFI_SSID`、`CODE_PET_WIFI_PASSWORD` 和 `CODE_PET_BRIDGE_URL`，设备会通过 `/api/device-snapshot` 轮询桌面端状态。
 
-更详细的目录结构、协议、端点和 hook 行为见 [AGENT.MD](AGENT.MD)。硬件协议见 [docs/protocol.md](docs/protocol.md)。
+更详细的目录结构、端点和 hook 行为见 [AGENT.MD](AGENT.MD)。协议文档入口见 [协议总览](docs/protocol.md)，并拆分为 [IDE / Agent 协议](docs/ide-protocol.zh-CN.md) 和 [硬件协议](docs/hardware-protocol.zh-CN.md)，也提供英文版 [IDE / Agent protocol](docs/ide-protocol.md) 和 [hardware protocol](docs/hardware-protocol.md)。
 
 ## 赞助商
 
