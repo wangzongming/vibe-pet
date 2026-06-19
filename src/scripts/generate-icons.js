@@ -7,18 +7,16 @@ const path = require("path");
 const { spawnSync } = require("child_process");
 
 const ROOT = path.resolve(__dirname, "..", "..");
-const LOGO_SOURCE = path.join(ROOT, "src", "desktop", "assets", "image.png");
 const ASSET_DIR = path.join(ROOT, "src", "desktop", "assets");
-const HOST_PUBLIC_DIR = path.join(ROOT, "src", "host", "public");
+const ICON_SOURCE = path.join(ASSET_DIR, "app-icon-source.png");
 const ICON_BASE = path.join(ASSET_DIR, "app-icon");
 const APP_ICON_PNG = `${ICON_BASE}.png`;
 const APP_ICON_ICNS = `${ICON_BASE}.icns`;
 const APP_ICON_ICO = `${ICON_BASE}.ico`;
 const TRAY_ICON_PNG = path.join(ASSET_DIR, "tray-icon.png");
-const WEB_LOGO_PNG = path.join(HOST_PUBLIC_DIR, "logo.png");
 const ROUND_ICON_SWIFT = path.join(__dirname, "round-icon.swift");
-// Scale content inside the rounded icon frame; trims empty border without cropping source.
-const LOGO_CONTENT_SCALE = 1.14;
+// The source icon is already framed for small OS surfaces such as taskbars.
+const ICON_CONTENT_SCALE = 1;
 
 const ICONSET_ENTRIES = [
   ["icon_16x16.png", 16],
@@ -32,7 +30,7 @@ const ICONSET_ENTRIES = [
   ["icon_512x512.png", 512],
   ["icon_512x512@2x.png", 1024],
 ];
-const ICO_SIZES = [16, 32, 48, 64, 128, 256];
+const ICO_SIZES = [16, 20, 24, 32, 40, 48, 64, 128, 256];
 
 function run(command, args) {
   const result = spawnSync(command, args, {
@@ -71,7 +69,7 @@ function renderPng(size, outFile) {
     "--resampleHeightWidth",
     String(size),
     String(size),
-    LOGO_SOURCE,
+    ICON_SOURCE,
     "--out",
     flatFile,
   ]);
@@ -82,7 +80,7 @@ function renderPng(size, outFile) {
       flatFile,
       outFile,
       String(size),
-      String(LOGO_CONTENT_SCALE),
+      String(ICON_CONTENT_SCALE),
     ]);
   } else {
     fs.copyFileSync(flatFile, outFile);
@@ -120,8 +118,8 @@ function writeIco(entries, outFile) {
 }
 
 function main() {
-  if (!fs.existsSync(LOGO_SOURCE)) {
-    throw new Error(`Missing logo source: ${path.relative(ROOT, LOGO_SOURCE)}`);
+  if (!fs.existsSync(ICON_SOURCE)) {
+    throw new Error(`Missing icon source: ${path.relative(ROOT, ICON_SOURCE)}`);
   }
   if (!commandExists("sips") || !commandExists("iconutil")) {
     throw new Error("Icon generation requires macOS tools `sips` and `iconutil`. Existing generated icons can still be used on Linux and Windows.");
@@ -137,7 +135,6 @@ function main() {
     fs.mkdirSync(icoDir, { recursive: true });
 
     renderPng(512, APP_ICON_PNG);
-    renderPng(128, WEB_LOGO_PNG);
     renderPng(64, TRAY_ICON_PNG);
 
     for (const [fileName, size] of ICONSET_ENTRIES) {
@@ -160,7 +157,6 @@ function main() {
   console.log(`- ${path.relative(ROOT, APP_ICON_ICNS)}`);
   console.log(`- ${path.relative(ROOT, APP_ICON_ICO)}`);
   console.log(`- ${path.relative(ROOT, TRAY_ICON_PNG)}`);
-  console.log(`- ${path.relative(ROOT, WEB_LOGO_PNG)}`);
 }
 
 try {

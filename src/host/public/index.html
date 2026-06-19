@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Vibe Pet BLE Bridge</title>
-    <link rel="icon" href="/logo.png" type="image/png">
+    <link rel="icon" href="/app-icon.png" type="image/png">
     <script>
       (() => {
         try {
@@ -22,7 +22,7 @@
       <section class="status-band">
         <div class="brand-block">
           <div class="brand-heading">
-            <img class="app-logo" src="/logo.png" alt="Vibe Pet logo">
+            <img class="app-logo" src="/app-icon.png" alt="Vibe Pet logo">
             <div class="brand-copy">
               <p class="eyebrow">Vibe Pet</p>
               <h1 data-i18n="web.title">Hardware Desktop Pet BLE Bridge</h1>
@@ -31,7 +31,7 @@
         </div>
         <div class="status-actions">
           <div class="top-toolbar" aria-label="Controls">
-            <div class="top-setting language-row" title="Language" data-i18n-title="label.language">
+            <div class="top-setting language-row" title="Language" data-i18n-title="label.language" data-language-menu-shell>
               <label class="sr-only" for="languageSelect" data-i18n="label.language">Language</label>
               <span class="top-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24">
@@ -39,11 +39,22 @@
                   <path d="M4 12h16M12 4c2.2 2.1 3.2 4.8 3.2 8s-1 5.9-3.2 8M12 4C9.8 6.1 8.8 8.8 8.8 12s1 5.9 3.2 8"></path>
                 </svg>
               </span>
-              <select id="languageSelect" data-language-select aria-label="Language" data-i18n-aria-label="label.language">
+              <select id="languageSelect" class="language-select-native" data-language-select aria-label="Language" data-i18n-aria-label="label.language">
                 <option value="en">English</option>
                 <option value="zh">中文</option>
                 <option value="ja">日本語</option>
               </select>
+              <button class="language-menu-button" id="languageMenuButton" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="languageMenu" data-language-menu-button>
+                <span class="language-menu-label" data-language-menu-label>English</span>
+                <svg class="language-menu-chevron" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m6 9 6 6 6-6"></path>
+                </svg>
+              </button>
+              <div class="language-menu" id="languageMenu" role="listbox" aria-labelledby="languageMenuButton" data-language-menu hidden>
+                <button class="language-menu-option" type="button" role="option" data-locale-option="en" aria-selected="true">English</button>
+                <button class="language-menu-option" type="button" role="option" data-locale-option="zh" aria-selected="false">中文</button>
+                <button class="language-menu-option" type="button" role="option" data-locale-option="ja" aria-selected="false">日本語</button>
+              </div>
             </div>
             <div class="top-setting theme-row" title="Theme" data-i18n-title="label.theme">
               <div class="theme-toggle" role="group" aria-label="Theme" data-i18n-aria-label="label.theme">

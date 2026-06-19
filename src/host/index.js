@@ -15,6 +15,8 @@ const { SERVICE_UUID, STATE_CHAR_UUID } = require("./protocol");
 const DEFAULT_PORT = 17384;
 const RUNTIME_PATH = path.join(os.homedir(), ".code-pet", "runtime.json");
 const PUBLIC_DIR = path.join(__dirname, "public");
+const DESKTOP_LOGO_PNG = path.join(__dirname, "..", "desktop", "assets", "logo.png");
+const DESKTOP_APP_ICON_PNG = path.join(__dirname, "..", "desktop", "assets", "app-icon.png");
 
 function parseArgs(argv) {
   const out = {
@@ -70,16 +72,11 @@ function contentType(filePath) {
   if (filePath.endsWith(".js")) return "text/javascript; charset=utf-8";
   if (filePath.endsWith(".css")) return "text/css; charset=utf-8";
   if (filePath.endsWith(".svg")) return "image/svg+xml";
+  if (filePath.endsWith(".png")) return "image/png";
   return "application/octet-stream";
 }
 
-function serveStatic(res, fileName) {
-  const filePath = path.join(PUBLIC_DIR, fileName);
-  if (!filePath.startsWith(PUBLIC_DIR)) {
-    res.writeHead(403);
-    res.end("Forbidden");
-    return;
-  }
+function serveFile(res, filePath) {
   fs.readFile(filePath, (err, data) => {
     if (err) {
       res.writeHead(404);
@@ -92,6 +89,16 @@ function serveStatic(res, fileName) {
     });
     res.end(data);
   });
+}
+
+function serveStatic(res, fileName) {
+  const filePath = path.join(PUBLIC_DIR, fileName);
+  if (!filePath.startsWith(PUBLIC_DIR)) {
+    res.writeHead(403);
+    res.end("Forbidden");
+    return;
+  }
+  serveFile(res, filePath);
 }
 
 function createServer(hub, options) {
@@ -122,7 +129,11 @@ function createServer(hub, options) {
       return;
     }
     if (req.method === "GET" && url.pathname === "/logo.png") {
-      serveStatic(res, "logo.png");
+      serveFile(res, DESKTOP_LOGO_PNG);
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/app-icon.png") {
+      serveFile(res, DESKTOP_APP_ICON_PNG);
       return;
     }
     if (req.method === "GET" && url.pathname === "/api/protocol") {

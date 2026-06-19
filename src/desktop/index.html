@@ -3,17 +3,31 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' https://img.shields.io https://assets.petdex.dev data:; style-src 'self'; script-src 'self';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' https://img.shields.io https://assets.petdex.dev https://aegis.qq.com https://rumt-zh.com https://rumt-sg.com https://rumt-us.com data: blob:; style-src 'self'; script-src 'self' https://tam.cdn-go.cn; connect-src 'self' https://aegis.qq.com https://rumt-zh.com https://rumt-sg.com https://rumt-us.com;">
     <title>Vibe Pet</title>
-    <link rel="icon" href="../host/public/logo.png" type="image/png">
+    <link rel="icon" href="assets/app-icon.png" type="image/png">
+    <script>
+      (() => {
+        try {
+          const theme = localStorage.getItem("code-pet-theme") === "night" ? "night" : "day";
+          document.documentElement.dataset.theme = theme;
+        } catch {
+          document.documentElement.dataset.theme = "day";
+        }
+      })();
+    </script>
     <link rel="stylesheet" href="../host/public/styles.css">
   </head>
   <body>
+    <header class="window-titlebar" aria-label="Vibe Pet window">
+      <img class="window-titlebar-logo" src="assets/app-icon.png" alt="">
+      <span class="window-titlebar-title">Vibe Pet</span>
+    </header>
     <main class="shell">
       <section class="status-band">
         <div class="brand-block">
           <div class="brand-heading">
-            <img class="app-logo" src="../host/public/logo.png" alt="Vibe Pet logo">
+            <img class="app-logo" src="assets/app-icon.png" alt="Vibe Pet logo">
             <h1>Vibe Pet</h1>
           </div>
           <a class="github-link" href="https://github.com/wangzongming/vibe-pet" target="_blank" rel="noreferrer" aria-label="Vibe Pet GitHub repository" data-i18n-aria-label="app.githubAria">
@@ -27,7 +41,7 @@
         </div>
         <div class="status-actions">
           <div class="top-toolbar" aria-label="Controls">
-            <div class="top-setting language-row" title="Language" data-i18n-title="label.language">
+            <div class="top-setting language-row" title="Language" data-i18n-title="label.language" data-language-menu-shell>
               <label class="sr-only" for="languageSelect" data-i18n="label.language">Language</label>
               <span class="top-icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24">
@@ -35,11 +49,22 @@
                   <path d="M4 12h16M12 4c2.2 2.1 3.2 4.8 3.2 8s-1 5.9-3.2 8M12 4C9.8 6.1 8.8 8.8 8.8 12s1 5.9 3.2 8"></path>
                 </svg>
               </span>
-              <select id="languageSelect" data-language-select aria-label="Language" data-i18n-aria-label="label.language">
+              <select id="languageSelect" class="language-select-native" data-language-select aria-label="Language" data-i18n-aria-label="label.language">
                 <option value="en">English</option>
                 <option value="zh">中文</option>
                 <option value="ja">日本語</option>
               </select>
+              <button class="language-menu-button" id="languageMenuButton" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="languageMenu" data-language-menu-button>
+                <span class="language-menu-label" data-language-menu-label>English</span>
+                <svg class="language-menu-chevron" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m6 9 6 6 6-6"></path>
+                </svg>
+              </button>
+              <div class="language-menu" id="languageMenu" role="listbox" aria-labelledby="languageMenuButton" data-language-menu hidden>
+                <button class="language-menu-option" type="button" role="option" data-locale-option="en" aria-selected="true">English</button>
+                <button class="language-menu-option" type="button" role="option" data-locale-option="zh" aria-selected="false">中文</button>
+                <button class="language-menu-option" type="button" role="option" data-locale-option="ja" aria-selected="false">日本語</button>
+              </div>
             </div>
             <div class="top-setting theme-row" title="Theme" data-i18n-title="label.theme">
               <div class="theme-toggle" role="group" aria-label="Theme" data-i18n-aria-label="label.theme">
@@ -150,21 +175,108 @@
         <header class="pet-modal-head">
           <div class="pet-modal-title">
             <strong id="petPickerTitle" data-i18n="pet.modalTitle">Switch character</strong>
-            <a id="petPickerSource" href="https://github.com/crafter-station/petdex" target="_blank" rel="noreferrer">Character source: github.com/crafter-station/petdex</a>
           </div>
           <button class="pet-modal-close" id="petPickerCloseBtn" type="button" aria-label="Close" data-i18n-aria-label="action.close">×</button>
         </header>
 
-        <div class="pet-modal-tools">
-          <input id="petPickerSearch" class="pet-picker-search" type="search" placeholder="Filter characters" data-i18n-placeholder="pet.filterPlaceholder">
-          <select id="petPickerKind" aria-label="Character type" data-i18n-aria-label="pet.kindAria">
-            <option value="" data-i18n="pet.allSources">All sources</option>
-          </select>
-          <button id="petPickerRefreshBtn" type="button" data-i18n="pet.refresh">Refresh</button>
+        <div class="pet-picker-tabs" role="tablist" aria-label="Character source">
+          <button class="pet-picker-tab" id="petPickerTabPetdex" type="button" role="tab" aria-selected="true" aria-controls="petPickerPanelPetdex" data-pet-picker-tab="petdex">Petdex</button>
+          <button class="pet-picker-tab" id="petPickerTabLocal" type="button" role="tab" aria-selected="false" aria-controls="petPickerPanelLocal" data-pet-picker-tab="local">本地上传</button>
+          <button class="pet-picker-tab" id="petPickerTabAi" type="button" role="tab" aria-selected="false" aria-controls="petPickerPanelAi" data-pet-picker-tab="ai">制作自己的角色</button>
         </div>
 
-        <div class="pet-modal-status" id="petPickerStatus" data-i18n="pet.loading">Loading</div>
-        <div class="pet-choice-grid" id="petChoiceGrid"></div>
+        <div class="pet-picker-panel" id="petPickerPanelPetdex" role="tabpanel" aria-labelledby="petPickerTabPetdex" data-pet-picker-panel="petdex">
+          <div class="pet-modal-tools">
+            <input id="petPickerSearch" class="pet-picker-search" type="search" placeholder="Filter characters" data-i18n-placeholder="pet.filterPlaceholder">
+            <select id="petPickerKind" aria-label="Character type" data-i18n-aria-label="pet.kindAria">
+              <option value="" data-i18n="pet.allSources">All sources</option>
+            </select>
+            <button id="petPickerRefreshBtn" type="button" data-i18n="pet.refresh">Refresh</button>
+          </div>
+
+          <div class="pet-modal-status" id="petPickerStatus" data-i18n="pet.loading">Loading</div>
+          <div class="pet-choice-grid" id="petChoiceGrid"></div>
+          <div class="pet-picker-pagination" id="petPickerPagination">
+            <button id="petPickerPrevPageBtn" type="button" aria-label="Previous page">上一页</button>
+            <span id="petPickerPageInfo">Page 1 / 1</span>
+            <input id="petPickerPageInput" class="pet-picker-page-input" type="number" min="1" value="1" inputmode="numeric" aria-label="跳转页码">
+            <span id="petPickerPageMeta" class="pet-picker-page-meta">总数量 0 · 每页 100</span>
+            <button id="petPickerNextPageBtn" type="button" aria-label="Next page">下一页</button>
+          </div>
+        </div>
+
+        <div class="pet-picker-panel" id="petPickerPanelLocal" role="tabpanel" aria-labelledby="petPickerTabLocal" data-pet-picker-panel="local" hidden>
+          <div class="pet-upload-layout">
+            <section class="pet-upload-card">
+              <div class="pet-upload-heading">
+                <strong>本地上传角色</strong>
+                <p>上传符合 Petdex sprite 格式的图片，保存后会立即应用到当前宠物。</p>
+              </div>
+              <label class="pet-form-field">
+                <span>角色名称</span>
+                <input id="localPetName" type="text" maxlength="48" placeholder="例如：My Coding Buddy">
+              </label>
+              <label class="pet-form-field">
+                <span>角色 Slug</span>
+                <input id="localPetSlug" type="text" maxlength="48" placeholder="my-coding-buddy">
+              </label>
+              <label class="pet-form-field">
+                <span>Spritesheet 图片</span>
+                <input id="localPetSpritesheet" type="file" accept="image/png,image/webp">
+              </label>
+              <div class="pet-upload-meta" id="localPetFileMeta">尚未选择图片。</div>
+              <button class="pet-primary-action" id="localPetApplyBtn" type="button">上传并应用</button>
+              <div class="pet-modal-status" id="localPetStatus">本地角色只保存在这台设备上。</div>
+            </section>
+
+            <section class="pet-requirements">
+              <strong>图片要求</strong>
+              <ul>
+                <li>文件格式：<code>spritesheet.webp</code> 或 <code>spritesheet.png</code>。</li>
+                <li>尺寸：8 行 × 9 列，共 72 帧；每帧 192×208 px，整图建议 1728×1664 px。</li>
+                <li>状态行顺序：idle、wave、run、failed、review、jump、extra1、extra2。</li>
+                <li>背景建议透明，角色保持居中，所有帧对齐同一基线。</li>
+                <li>Petdex 标准包还包含 <code>pet.json</code>，这里先使用表单里的名称和 Slug 生成本地元数据。</li>
+              </ul>
+              <a href="https://github.com/crafter-station/petdex#pet-package-format" target="_blank" rel="noreferrer">查看 Petdex package format</a>
+            </section>
+          </div>
+        </div>
+
+        <div class="pet-picker-panel" id="petPickerPanelAi" role="tabpanel" aria-labelledby="petPickerTabAi" data-pet-picker-panel="ai" hidden>
+          <div class="pet-ai-layout">
+            <section class="pet-upload-card">
+              <div class="pet-upload-heading">
+                <strong>AI 制作角色</strong>
+                <p>上传角色参考图，后续会调用生成接口输出 Petdex 规格 spritesheet。</p>
+              </div>
+              <label class="pet-form-field">
+                <span>正视图（必填）</span>
+                <input id="aiPetFrontView" type="file" accept="image/png,image/jpeg,image/webp">
+              </label>
+              <label class="pet-form-field">
+                <span>左侧视图（可选）</span>
+                <input id="aiPetLeftView" type="file" accept="image/png,image/jpeg,image/webp">
+              </label>
+              <label class="pet-form-field">
+                <span>右侧视图（可选）</span>
+                <input id="aiPetRightView" type="file" accept="image/png,image/jpeg,image/webp">
+              </label>
+              <button class="pet-primary-action" id="aiPetGenerateBtn" type="button" disabled>生成角色（即将支持）</button>
+              <div class="pet-modal-status" id="aiPetStatus">生成接口已预留，当前版本先支持页面和素材收集。</div>
+            </section>
+
+            <section class="pet-requirements">
+              <strong>参考图建议</strong>
+              <ul>
+                <li>正视图尽量完整展示角色，避免遮挡和复杂背景。</li>
+                <li>左右侧视图可以帮助保持轮廓、配色和配饰一致。</li>
+                <li>推荐使用清晰的 PNG、JPG 或 WebP，单张图片控制在 10MB 以内。</li>
+                <li>生成结果目标仍会遵循 Petdex 的 192×208 px 帧和 8×9 sprite 表格式。</li>
+              </ul>
+            </section>
+          </div>
+        </div>
       </section>
     </div>
 
