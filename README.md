@@ -160,7 +160,7 @@ npm run build:win -- --arch x64
 npm run build:linux -- --target AppImage
 ```
 
-Installer defaults are DMG for macOS, NSIS for Windows, and AppImage plus deb for Linux. Installers are unsigned; release distribution may still require platform-specific signing or notarization. macOS installers must be built on macOS.
+Installer defaults are DMG plus zip for macOS, NSIS for Windows, and AppImage plus deb for Linux. Installers are unsigned; release distribution may still require platform-specific signing or notarization. macOS installers must be built on macOS.
 
 Display firmware for ESP-AI display boards, M5Stack, LILYGO, Heltec, and ESP8266 OLED boards lives in `src/firmware/esp-display-code-pet`:
 

@@ -45,7 +45,7 @@ const PLATFORM_FLAGS = {
 };
 
 const DEFAULT_TARGETS = {
-  darwin: ["dmg"],
+  darwin: ["dmg", "zip"],
   linux: ["AppImage", "deb"],
   win32: ["nsis"],
 };
@@ -149,7 +149,7 @@ Options:
   --skip-check                                 Skip syntax checks before packaging.
 
 Default installer targets:
-  darwin: dmg
+  darwin: dmg, zip
   linux: AppImage, deb
   win32: nsis
 
