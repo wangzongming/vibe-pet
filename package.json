@@ -3,6 +3,7 @@
   "productName": "Vibe Pet",
   "version": "1.0.0",
   "description": "Hardware desktop pet bridge for AI agents over BLE and Wi-Fi.",
+  "author": "wangzongming <1746809408@qq.com>",
   "main": "src/desktop/main.js",
   "type": "commonjs",
   "scripts": {
