@@ -70,11 +70,11 @@ Vibe Pet automatically tries to install or sync integrations for:
 
 | Hardware | Display / role | Sync | Adapted | Notes |
 | --- | --- | --- | --- | --- |
-| [Wio Terminal](https://www.seeedstudio.com/Wio-Terminal-p-4509.html) | Main animated pet display | BLE | ✅ | Mature BLE animated display target. |
-| [ESP-AI-MINI AI Dev Kit](https://espai.fun/open/pcb/mini-ext/1.0.0/) | ESP32-S3-based AI dev kit | BLE | ✅ | TFT target; LVGL character rendering. |
-| [ESP-AI v3 Dev Board](https://espai.fun/open/pcb/common/3.0.0/) | ESP32-S3-based AI dev kit | BLE | ✅ | TFT target; LVGL character rendering. |
-| [ESP-AI v4 Dev Board](https://espai.fun/open/pcb/common/4.0.0/) | ESP32-S3-based AI dev kit | BLE | ✅ | TFT target; LVGL character rendering. |
-| [M5Stack CoreS3](https://docs.m5stack.com/en/core/CoreS3) | ESP32-S3 color touch display | BLE | ✅ | M5Unified ESP32-S3 target. |
+| [Wio Terminal](https://www.seeedstudio.com/Wio-Terminal-p-4509.html) | Main animated pet display | BLE | Ing | Mature BLE animated display target. |
+| [ESP-AI-MINI AI Dev Kit](https://espai.fun/open/pcb/mini-ext/1.0.0/) | ESP32-S3-based AI dev kit | BLE | Ing | TFT target; LVGL character rendering. |
+| [ESP-AI v3 Dev Board](https://espai.fun/open/pcb/common/3.0.0/) | ESP32-S3-based AI dev kit | BLE | Ing | TFT target; LVGL character rendering. |
+| [ESP-AI v4 Dev Board](https://espai.fun/open/pcb/common/4.0.0/) | ESP32-S3-based AI dev kit | BLE | Ing | TFT target; LVGL character rendering. |
+| [M5Stack CoreS3](https://docs.m5stack.com/en/core/CoreS3) | ESP32-S3 color touch display | BLE | Ing | M5Unified ESP32-S3 target. |
 
 Want to bring Vibe Pet to your own device? The BLE and Wi-Fi hardware payloads are intentionally small, so new screens, status lights, badges, and custom boards can be added without changing the desktop app.
 

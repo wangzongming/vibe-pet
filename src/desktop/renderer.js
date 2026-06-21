@@ -67,6 +67,7 @@ const PETDEX_FRAME_SEQUENCE_BY_STATE = {
   attention: [0, 1, 2, 3, 2, 1],
   sweeping: [0, 1, 2, 1],
 };
+const HARDWARE_PERSONA_STATES = ["idle", "notification", "working", "error", "thinking", "attention"];
 const VIEW_STATE_PRIORITY = {
   error: 100,
   notification: 95,
@@ -359,7 +360,9 @@ let hardwarePersonaTransferRevision = 0;
 let hardwareSendSequence = 0;
 let hardwarePersonaCacheDeviceKey = "";
 let activeHardwarePersonaTransferId = "";
+let activeHardwarePersonaTransferSignature = "";
 let cancelledHardwarePersonaTransferIds = new Set();
+let pendingHardwareStatusPacket = null;
 let firmwareTargets = [];
 let firmwarePorts = [];
 let firmwareModalOpen = false;
@@ -399,6 +402,7 @@ function resetHardwarePersonaTransferState(options = {}) {
     hardwarePersonaCacheDeviceKey = "";
   }
   activeHardwarePersonaTransferId = "";
+  activeHardwarePersonaTransferSignature = "";
   cancelledHardwarePersonaTransferIds.clear();
   hardwarePersonaTransferRevision++;
   hardwareSendSequence++;
@@ -1239,6 +1243,17 @@ async function buildHardwarePersonaFrames(persona, state, theme) {
     frames.push(await buildHardwarePersonaFrame(persona, normalizedState, theme, sequenceIndex));
   }
   return frames;
+}
+
+async function buildHardwarePersonaFrameBundle(persona, theme) {
+  const entries = [];
+  for (const state of HARDWARE_PERSONA_STATES) {
+    entries.push({
+      state,
+      frames: await buildHardwarePersonaFrames(persona, state, theme),
+    });
+  }
+  return entries;
 }
 
 function selectablePetdexPets() {
@@ -2568,10 +2583,6 @@ async function writeBluetoothFragmentedBytes(characteristic, bytes) {
   await writeBluetoothBytes(characteristic, encoder.encode(`!${id}`));
 }
 
-function hardwarePersonaTransferState(hardwarePet, packet) {
-  return petdexStateForHardware((packet && packet.s) || (hardwarePet && hardwarePet.state) || "idle");
-}
-
 function hardwarePersonaTransferTheme(packet) {
   return ((packet && packet.th) || storedTheme()) === "night" ? "night" : "day";
 }
@@ -2595,7 +2606,7 @@ function hardwarePersonaTransferSignature(hardwarePet, packet) {
     persona.slug || "",
     persona.spritesheetUrl || "",
     hardwarePersonaTransferTheme(packet),
-    hardwarePersonaTransferState(hardwarePet, packet),
+    "all-states-v1",
   ].join("|");
 }
 
@@ -2622,18 +2633,39 @@ async function stopHardwarePersonaTransferIfCancelled(id, revision, signature) {
   return true;
 }
 
-async function sendHardwarePersonaFrame(hardwarePet, packet, revision, signature, showLoading, loadingSignature) {
+async function flushPendingHardwareStatusPacket(revision, signature) {
+  if (!pendingHardwareStatusPacket) return;
+  if (signature && (revision !== hardwarePersonaTransferRevision || signature !== latestHardwarePersonaRequestSignature)) return;
+  const packet = pendingHardwareStatusPacket;
+  pendingHardwareStatusPacket = null;
+  await writeBluetoothJson(packet);
+  setConnection(activeBluetoothConnectionMessage(), true);
+}
+
+async function sendHardwarePersonaFrameBundle(hardwarePet, packet, revision, signature, showLoading, loadingSignature) {
   if (!hardwarePet || !hardwarePet.persona) return;
   const persona = desktopPetPersona(hardwarePet.persona);
   if (isEmbeddedHardwarePersona(persona) || !persona.spritesheetUrl) return;
   if (signature && revision !== hardwarePersonaTransferRevision) return;
+  activeHardwarePersonaTransferSignature = signature || "";
 
-  const state = hardwarePersonaTransferState(hardwarePet, packet);
   const theme = hardwarePersonaTransferTheme(packet);
-  const frames = await buildHardwarePersonaFrames(persona, state, theme);
-  if (signature && revision !== hardwarePersonaTransferRevision) return;
-  const frameSetKey = frames.map((frame) => frame.key).join("~");
-  if (frameSetKey === lastHardwarePersonaImageKey) return;
+  let bundle;
+  try {
+    bundle = await buildHardwarePersonaFrameBundle(persona, theme);
+  } catch (err) {
+    if (activeHardwarePersonaTransferSignature === signature) activeHardwarePersonaTransferSignature = "";
+    throw err;
+  }
+  if (signature && revision !== hardwarePersonaTransferRevision) {
+    if (activeHardwarePersonaTransferSignature === signature) activeHardwarePersonaTransferSignature = "";
+    return;
+  }
+  const frameSetKey = bundle.map((entry) => `${entry.state}:${entry.frames.map((frame) => frame.key).join("~")}`).join("||");
+  if (frameSetKey === lastHardwarePersonaImageKey) {
+    if (activeHardwarePersonaTransferSignature === signature) activeHardwarePersonaTransferSignature = "";
+    return;
+  }
 
   const id = hardwarePersonaTransferId(`${frameSetKey}|${revision}`);
   activeHardwarePersonaTransferId = id;
@@ -2643,45 +2675,51 @@ async function sendHardwarePersonaFrame(hardwarePet, packet, revision, signature
     const personaName = clampText(persona.displayName || persona.slug || "", 48);
     const personaKind = clampText(persona.kind || "", 24);
     const spriteUrl = hardwareSpriteUrl(persona.spritesheetUrl);
-    for (let frameIndex = 0; frameIndex < frames.length; frameIndex++) {
-      const frame = frames[frameIndex];
-      const startPayload = {
-        im: "s",
-        id,
-        p: clampText(persona.slug, 48),
-        d: personaName,
-        st: state,
-        w: HARDWARE_PERSONA_FRAME_WIDTH,
-        h: HARDWARE_PERSONA_FRAME_HEIGHT,
-        f: frame.format,
-        z: HARDWARE_PERSONA_FRAME_BYTES,
-        ld: showLoading ? 1 : 0,
-        fc: frames.length,
-        fr: frameIndex,
-        th: theme,
-      };
-      if (personaKind) startPayload.k = personaKind;
-      if (spriteUrl) startPayload.u = spriteUrl;
-      await writeBluetoothJson(startPayload);
-
-      if (await stopHardwarePersonaTransferIfCancelled(id, revision, signature)) return;
-
-      const base64 = bytesToBase64(frame.bytes);
-      let seq = 0;
-      for (let offset = 0; offset < base64.length; offset += HARDWARE_PERSONA_CHUNK_CHARS) {
-        if (await stopHardwarePersonaTransferIfCancelled(id, revision, signature)) return;
-        await writeBluetoothJson({
-          im: "c",
+    for (const entry of bundle) {
+      const frames = entry.frames;
+      for (let frameIndex = 0; frameIndex < frames.length; frameIndex++) {
+        const frame = frames[frameIndex];
+        const startPayload = {
+          im: "s",
           id,
-          q: seq++,
-          d: base64.slice(offset, offset + HARDWARE_PERSONA_CHUNK_CHARS),
-        });
-        if (await stopHardwarePersonaTransferIfCancelled(id, revision, signature)) return;
-        await sleep(HARDWARE_PERSONA_CHUNK_DELAY_MS);
-      }
+          p: clampText(persona.slug, 48),
+          d: personaName,
+          st: entry.state,
+          w: HARDWARE_PERSONA_FRAME_WIDTH,
+          h: HARDWARE_PERSONA_FRAME_HEIGHT,
+          f: frame.format,
+          z: HARDWARE_PERSONA_FRAME_BYTES,
+          ld: showLoading ? 1 : 0,
+          fc: frames.length,
+          fr: frameIndex,
+          th: theme,
+        };
+        if (personaKind) startPayload.k = personaKind;
+        if (spriteUrl) startPayload.u = spriteUrl;
+        await writeBluetoothJson(startPayload);
 
-      if (await stopHardwarePersonaTransferIfCancelled(id, revision, signature)) return;
-      await writeBluetoothJson({ im: "e", id });
+        if (await stopHardwarePersonaTransferIfCancelled(id, revision, signature)) return;
+        await flushPendingHardwareStatusPacket(revision, signature);
+
+        const base64 = bytesToBase64(frame.bytes);
+        let seq = 0;
+        for (let offset = 0; offset < base64.length; offset += HARDWARE_PERSONA_CHUNK_CHARS) {
+          if (await stopHardwarePersonaTransferIfCancelled(id, revision, signature)) return;
+          await writeBluetoothJson({
+            im: "c",
+            id,
+            q: seq++,
+            d: base64.slice(offset, offset + HARDWARE_PERSONA_CHUNK_CHARS),
+          });
+          if (await stopHardwarePersonaTransferIfCancelled(id, revision, signature)) return;
+          await flushPendingHardwareStatusPacket(revision, signature);
+          await sleep(HARDWARE_PERSONA_CHUNK_DELAY_MS);
+        }
+
+        if (await stopHardwarePersonaTransferIfCancelled(id, revision, signature)) return;
+        await writeBluetoothJson({ im: "e", id });
+        await flushPendingHardwareStatusPacket(revision, signature);
+      }
     }
 
     if (isHardwarePersonaTransferCancelled(id, revision, signature)) return;
@@ -2690,6 +2728,7 @@ async function sendHardwarePersonaFrame(hardwarePet, packet, revision, signature
     hardwarePersonaCacheDeviceKey = bluetoothDeviceCacheKey(device);
   } finally {
     if (activeHardwarePersonaTransferId === id) activeHardwarePersonaTransferId = "";
+    if (activeHardwarePersonaTransferSignature === signature) activeHardwarePersonaTransferSignature = "";
     cancelledHardwarePersonaTransferIds.delete(id);
   }
 }
@@ -2714,6 +2753,13 @@ async function sendCurrent(options = {}) {
     shouldSendPersonaFrame = !!transferSignature;
     shouldShowPersonaLoading = !!transferSignature && loadingSignature !== lastHardwarePersonaLoadingSignature;
   }
+  const sameActivePersonaTransfer = transferSignature &&
+    transferSignature === latestHardwarePersonaRequestSignature &&
+    transferSignature === activeHardwarePersonaTransferSignature;
+  if (!ensurePersonaSync && sameActivePersonaTransfer) {
+    pendingHardwareStatusPacket = packet;
+    return;
+  }
   return enqueueBluetoothWrite(async () => {
     let personaFrameStillCurrent = shouldSendPersonaFrame && !!transferSignature &&
       transferSignature === latestHardwarePersonaRequestSignature &&
@@ -2729,7 +2775,7 @@ async function sendCurrent(options = {}) {
     if (transferSignature && transferRevision !== hardwarePersonaTransferRevision) return;
     try {
       if (shouldSendPersonaFrame) {
-        await sendHardwarePersonaFrame(
+        await sendHardwarePersonaFrameBundle(
           hardwarePet,
           packet,
           transferRevision,
