@@ -182,7 +182,9 @@ static lv_img_dsc_t dynamicPersonaImages[CODE_PET_DYNAMIC_PERSONA_MAX_FRAMES] = 
 };
 static String dynamicPersonaId = "";
 static String dynamicPersonaSlug = "";
+static String dynamicPersonaState = "idle";
 static String dynamicPersonaTransferSlug = "";
+static String dynamicPersonaTransferState = "idle";
 static bool dynamicPersonaReady = false;
 static bool dynamicPersonaReceiving = false;
 static bool dynamicPersonaShowLoading = true;
@@ -408,7 +410,8 @@ static void lvFlush(lv_disp_drv_t *disp, const lv_area_t *area, lv_color_t *colo
 
 static void ensureLvglUi();
 static bool renderPersonaWithLvgl(uint16_t bg, uint16_t header, uint16_t panel, uint16_t ink, uint16_t muted, uint16_t accent);
-static const lv_img_dsc_t *dynamicPersonaFrameForSlug(const String &slug);
+static const lv_img_dsc_t *dynamicPersonaFrameForSlug(const String &slug, const String &state);
+static const lv_img_dsc_t *dynamicPersonaFrameForSlugAnyState(const String &slug);
 static void clearDynamicPersonaFrame();
 static void applyDynamicPersonaPayload(JsonVariantConst src);
 #endif
@@ -539,6 +542,18 @@ static String stateLabel(const String &state) {
 
 static String displayStateLabel() {
   return pet.stateLabel.length() ? pet.stateLabel : stateLabel(pet.state);
+}
+
+static String normalizePacketState(const String &state) {
+  String clean = cleanText(state, 24);
+  if (clean == "permission" || clean == "codex-permission") return "notification";
+  if (clean == "idle" || clean == "thinking" || clean == "working" || clean == "typing" ||
+      clean == "building" || clean == "juggling" || clean == "attention" ||
+      clean == "notification" || clean == "error" || clean == "sweeping" ||
+      clean == "sleeping") {
+    return clean;
+  }
+  return "idle";
 }
 
 static int petBob() {
@@ -866,16 +881,21 @@ static bool renderPersonaWithLvgl(uint16_t bg, uint16_t header, uint16_t panel, 
   const bool connected = bleConnected;
   String renderSlug = pet.personaSlug.length() ? pet.personaSlug : String(CODE_PET_LVGL_FALLBACK_PERSONA_SLUG);
   String renderState = connected ? pet.state : String("idle");
-  const bool imageLoading = connected && dynamicPersonaReceiving && dynamicPersonaShowLoading && dynamicPersonaTransferSlug == renderSlug;
+  const bool imageLoading = connected && dynamicPersonaReceiving && dynamicPersonaShowLoading &&
+                            dynamicPersonaTransferSlug == renderSlug &&
+                            dynamicPersonaTransferState == normalizePacketState(renderState);
   const uint8_t imageProgress = imageLoading ? dynamicPersonaProgressPercent() : 0;
-  const lv_img_dsc_t *frame = imageLoading && dynamicPersonaReady ? dynamicPersonaFrameForSlug(dynamicPersonaSlug) : dynamicPersonaFrameForSlug(renderSlug);
+  const lv_img_dsc_t *frame = imageLoading && dynamicPersonaReady ? dynamicPersonaFrameForSlug(dynamicPersonaSlug, dynamicPersonaState) : dynamicPersonaFrameForSlug(renderSlug, renderState);
+  if (!frame && dynamicPersonaReady && renderSlug == dynamicPersonaSlug) {
+    frame = dynamicPersonaFrameForSlugAnyState(renderSlug);
+  }
   if (!frame) {
     frame = codePetPersonaFrame(renderSlug, renderState, frameIndex);
   }
   if (!frame && !connected && dynamicPersonaReady) {
-    frame = dynamicPersonaFrameForSlug(dynamicPersonaSlug);
+    frame = dynamicPersonaFrameForSlug(dynamicPersonaSlug, dynamicPersonaState);
   }
-  if (!frame) {
+  if (!frame && !pet.personaSlug.length()) {
     frame = codePetPersonaFrame(String(CODE_PET_LVGL_FALLBACK_PERSONA_SLUG), renderState, frameIndex);
   }
   if (!frame) return false;
@@ -1007,7 +1027,13 @@ static void markDirty() {
 }
 
 #if defined(CODE_PET_USE_LVGL) && defined(CODE_PET_DISPLAY_TFT_ESPI)
-static const lv_img_dsc_t *dynamicPersonaFrameForSlug(const String &slug) {
+static const lv_img_dsc_t *dynamicPersonaFrameForSlug(const String &slug, const String &state) {
+  if (!dynamicPersonaReady || !dynamicPersonaSlug.length() || slug != dynamicPersonaSlug) return nullptr;
+  if (normalizePacketState(state) != dynamicPersonaState) return nullptr;
+  return dynamicPersonaFrameForSlugAnyState(slug);
+}
+
+static const lv_img_dsc_t *dynamicPersonaFrameForSlugAnyState(const String &slug) {
   if (!dynamicPersonaReady || !dynamicPersonaSlug.length() || slug != dynamicPersonaSlug) return nullptr;
   uint8_t count = dynamicPersonaFrameCount;
   if (count < 1) count = 1;
@@ -1022,7 +1048,9 @@ static void clearDynamicPersonaFrame() {
   dynamicPersonaShowLoading = true;
   dynamicPersonaId = "";
   dynamicPersonaSlug = "";
+  dynamicPersonaState = "idle";
   dynamicPersonaTransferSlug = "";
+  dynamicPersonaTransferState = "idle";
   dynamicPersonaExpectedSeq = 0;
   dynamicPersonaReceived = 0;
   dynamicPersonaFrameCount = 1;
@@ -1092,6 +1120,7 @@ static void saveDynamicPersonaFrame() {
   doc["z"] = CODE_PET_DYNAMIC_PERSONA_BYTES;
   doc["fc"] = count;
   doc["p"] = dynamicPersonaSlug;
+  doc["st"] = dynamicPersonaState;
   doc["d"] = pet.personaName;
   doc["k"] = pet.personaKind;
   doc["u"] = pet.spriteUrl;
@@ -1125,6 +1154,7 @@ static void loadDynamicPersonaFrame() {
   uint32_t size = doc["z"] | 0;
   int frameCount = doc["fc"] | 1;
   String slug = cleanText(String(doc["p"] | ""), 48);
+  String state = normalizePacketState(String(doc["st"] | "idle"));
   if (version != 1 ||
       !slug.length() ||
       width != CODE_PET_DYNAMIC_PERSONA_WIDTH ||
@@ -1143,7 +1173,9 @@ static void loadDynamicPersonaFrame() {
   dynamicPersonaReceiving = false;
   dynamicPersonaShowLoading = true;
   dynamicPersonaSlug = slug;
+  dynamicPersonaState = state;
   dynamicPersonaTransferSlug = "";
+  dynamicPersonaTransferState = state;
   dynamicPersonaFrameCount = static_cast<uint8_t>(frameCount);
   dynamicPersonaTransferFrameCount = dynamicPersonaFrameCount;
   dynamicPersonaReceivedFrameMask = (1U << dynamicPersonaFrameCount) - 1U;
@@ -1169,6 +1201,7 @@ static void abortDynamicPersonaTransfer() {
   dynamicPersonaReceiving = false;
   dynamicPersonaShowLoading = true;
   dynamicPersonaTransferSlug = "";
+  dynamicPersonaTransferState = "idle";
   dynamicPersonaExpectedSeq = 0;
   dynamicPersonaReceived = 0;
   dynamicPersonaTransferFrameCount = 1;
@@ -1236,6 +1269,11 @@ static void applyDynamicPersonaPayload(JsonVariantConst src) {
   if (op == "s") {
     String id = cleanText(String(src["id"] | ""), 48);
     String slug = cleanText(String(src["p"] | ""), 48);
+    String displayName = cleanText(String(src["d"] | src["displayName"] | ""), 48);
+    String kind = cleanText(String(src["k"] | src["kind"] | ""), 24);
+    String spriteUrl = String(src["u"] | src["spritesheetUrl"] | "");
+    String theme = cleanText(String(src["th"] | src["theme"] | ""), 12);
+    String state = normalizePacketState(String(src["st"] | src["state"] | "idle"));
     String format = String(src["f"] | "");
     int width = src["w"] | 0;
     int height = src["h"] | 0;
@@ -1261,8 +1299,10 @@ static void applyDynamicPersonaPayload(JsonVariantConst src) {
       dynamicPersonaReceivedFrameMask = 0;
       dynamicPersonaTransferFrameCount = static_cast<uint8_t>(frameCount);
       dynamicPersonaTransferSlug = slug;
+      dynamicPersonaTransferState = state;
     } else if (id != dynamicPersonaId ||
                slug != dynamicPersonaTransferSlug ||
+               state != dynamicPersonaTransferState ||
                frameCount != dynamicPersonaTransferFrameCount ||
                (dynamicPersonaReceivedFrameMask & (1U << frameSlot))) {
       abortDynamicPersonaTransfer();
@@ -1278,6 +1318,14 @@ static void applyDynamicPersonaPayload(JsonVariantConst src) {
     dynamicPersonaReceived = 0;
     dynamicPersonaLastProgressPercent = 0;
     dynamicPersonaRleIndex = 0;
+    String previousPersonaSlug = pet.personaSlug;
+    pet.personaSlug = slug;
+    if (displayName.length()) pet.personaName = displayName;
+    else if (previousPersonaSlug != slug || !pet.personaName.length()) pet.personaName = slug;
+    if (kind.length()) pet.personaKind = kind;
+    if (!src["u"].isNull() || !src["spritesheetUrl"].isNull()) pet.spriteUrl = spriteUrl;
+    if (theme == "night" || theme == "dark") pet.theme = theme;
+    else if (theme.length()) pet.theme = "day";
     markDirty();
     return;
   }
@@ -1318,12 +1366,14 @@ static void applyDynamicPersonaPayload(JsonVariantConst src) {
       memcpy(dynamicPersonaPixels[dynamicPersonaTransferFrameIndex], dynamicPersonaPendingPixels, CODE_PET_DYNAMIC_PERSONA_BYTES);
       dynamicPersonaReady = true;
       dynamicPersonaSlug = dynamicPersonaTransferSlug;
+      dynamicPersonaState = dynamicPersonaTransferState;
       dynamicPersonaReceivedFrameMask |= (1U << dynamicPersonaTransferFrameIndex);
       if (dynamicPersonaReceivedFrameMask & 0x01) dynamicPersonaFrameCount = 1;
       uint8_t completeMask = (1U << dynamicPersonaTransferFrameCount) - 1U;
       if ((dynamicPersonaReceivedFrameMask & completeMask) == completeMask) {
         dynamicPersonaFrameCount = dynamicPersonaTransferFrameCount;
         dynamicPersonaTransferSlug = "";
+        dynamicPersonaTransferState = dynamicPersonaState;
         dynamicPersonaLastProgressPercent = 100;
         saveDynamicPersonaFrame();
       }
@@ -1363,18 +1413,6 @@ static void clearDisconnectedPetState() {
   markDirty();
 }
 
-static String normalizePacketState(const String &state) {
-  String clean = cleanText(state, 24);
-  if (clean == "permission" || clean == "codex-permission") return "notification";
-  if (clean == "idle" || clean == "thinking" || clean == "working" || clean == "typing" ||
-      clean == "building" || clean == "juggling" || clean == "attention" ||
-      clean == "notification" || clean == "error" || clean == "sweeping" ||
-      clean == "sleeping") {
-    return clean;
-  }
-  return "idle";
-}
-
 static void applyPacket(JsonVariantConst src) {
   String nextState = normalizePacketState(String(src["s"] | src["state"] | "idle"));
   String nextStateLabel = String(src["sl"] | src["stateLabel"] | "");
@@ -1394,6 +1432,14 @@ static void applyPacket(JsonVariantConst src) {
   bool hasTheme = !src["th"].isNull() || !src["theme"].isNull();
   String nextTheme = hasTheme ? String(src["th"] | src["theme"] | "day") : pet.theme;
   int nextActiveCount = src["n"] | src["activeCount"] | 0;
+
+#if defined(CODE_PET_USE_LVGL) && defined(CODE_PET_DISPLAY_TFT_ESPI)
+  if (dynamicPersonaReceiving &&
+      (nextState != dynamicPersonaTransferState ||
+       (dynamicPersonaTransferSlug.length() && nextPersonaSlug != dynamicPersonaTransferSlug))) {
+    abortDynamicPersonaTransfer();
+  }
+#endif
 
   bool changed = nextState != pet.state || nextStateLabel != pet.stateLabel ||
                  nextAgent != pet.agent || nextEvent != pet.event ||
