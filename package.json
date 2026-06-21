@@ -13,6 +13,7 @@
     "predev": "node src/scripts/install-hooks.js --silent",
     "dev": "electron . --verbose --watch",
     "icons": "node src/scripts/generate-icons.js",
+    "firmware:package": "node src/scripts/package-firmware.js",
     "bridge:web": "node src/host/index.js",
     "bridge:web:dev": "node src/host/index.js --verbose",
     "setup": "node src/scripts/setup.js",

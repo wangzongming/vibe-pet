@@ -10,6 +10,12 @@ matching hardware folder. ESP targets use the bundled JavaScript esptool path an
 write `main.bin` at flash address `0x0`, so `main.bin` should be a merged image
 when the board needs bootloader, partition, and app segments.
 
+Build all app-supported `main.bin` images from the repository root:
+
+```bash
+npm run firmware:package
+```
+
 | Directory | Hardware | Transport |
 | --- | --- | --- |
 | `wio-terminal-code-pet` | Wio Terminal | BLE |

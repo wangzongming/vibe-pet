@@ -35,6 +35,11 @@
 #endif
 #endif
 
+#if defined(ESP32) && defined(CODE_PET_USE_LVGL) && defined(CODE_PET_DISPLAY_TFT_ESPI)
+#include <FS.h>
+#include <SPIFFS.h>
+#endif
+
 #if defined(CODE_PET_USE_LVGL) && defined(CODE_PET_DISPLAY_TFT_ESPI)
 #include <lvgl.h>
 class TFT_eSPI;
@@ -115,9 +120,12 @@ static lv_color_t lvBufferB[320 * 20];
 static lv_disp_drv_t lvDisplayDriver;
 static lv_obj_t *lvRoot = nullptr;
 static lv_obj_t *lvHeader = nullptr;
+static lv_obj_t *lvHeaderShadow = nullptr;
 static lv_obj_t *lvStatus = nullptr;
+static lv_obj_t *lvStatusShadow = nullptr;
 static lv_obj_t *lvFooterClip = nullptr;
 static lv_obj_t *lvFooter = nullptr;
+static lv_obj_t *lvFooterShadow = nullptr;
 static lv_obj_t *lvImage = nullptr;
 static lv_obj_t *lvFallback = nullptr;
 static lv_obj_t *lvFallbackAgent = nullptr;
@@ -125,7 +133,9 @@ static lv_obj_t *lvFallbackState = nullptr;
 static lv_obj_t *lvFallbackPersona = nullptr;
 static lv_obj_t *lvLoadPanel = nullptr;
 static lv_obj_t *lvLoadTitle = nullptr;
+static lv_obj_t *lvLoadTitleShadow = nullptr;
 static lv_obj_t *lvLoadPercent = nullptr;
+static lv_obj_t *lvLoadPercentShadow = nullptr;
 static lv_obj_t *lvLoadTrack = nullptr;
 static lv_obj_t *lvLoadFill = nullptr;
 static uint32_t lvLastTickAt = 0;
@@ -186,6 +196,13 @@ static uint8_t dynamicPersonaReceivedFrameMask = 0;
 static uint8_t dynamicPersonaLastProgressPercent = 0;
 static uint8_t dynamicPersonaRleTriple[3] = {0, 0, 0};
 static uint8_t dynamicPersonaRleIndex = 0;
+#if defined(ESP32)
+static bool dynamicPersonaStoreMounted = false;
+static const char *DYNAMIC_PERSONA_META_PATH = "/pet_meta.json";
+static const char *DYNAMIC_PERSONA_META_TMP_PATH = "/pet_meta.tmp";
+static const char *DYNAMIC_PERSONA_FRAME_PATHS[CODE_PET_DYNAMIC_PERSONA_MAX_FRAMES] = {"/pet0.bin", "/pet1.bin"};
+static const char *DYNAMIC_PERSONA_FRAME_TMP_PATHS[CODE_PET_DYNAMIC_PERSONA_MAX_FRAMES] = {"/pet0.tmp", "/pet1.tmp"};
+#endif
 #endif
 
 static void noteDisplayActivity() {
@@ -334,6 +351,36 @@ static lv_color_t lvColor(uint16_t color) {
   lv_color_t value;
   value.full = color;
   return value;
+}
+
+static uint8_t colorLuma(uint16_t color) {
+  uint8_t r = ((color >> 11) & 0x1F) * 255 / 31;
+  uint8_t g = ((color >> 5) & 0x3F) * 255 / 63;
+  uint8_t b = (color & 0x1F) * 255 / 31;
+  return static_cast<uint8_t>((static_cast<uint16_t>(r) * 30U + static_cast<uint16_t>(g) * 59U + static_cast<uint16_t>(b) * 11U) / 100U);
+}
+
+static uint16_t textLiftColor(uint16_t textColor) {
+  return colorLuma(textColor) > 150 ? rgb565(0, 0, 0) : rgb565(255, 255, 255);
+}
+
+static void stylePremiumLabel(lv_obj_t *label, uint16_t color) {
+  if (!label) return;
+  lv_obj_set_style_text_color(label, lvColor(color), 0);
+  lv_obj_set_style_text_opa(label, LV_OPA_COVER, 0);
+  lv_obj_set_style_text_letter_space(label, 0, 0);
+}
+
+static void stylePremiumShadow(lv_obj_t *label, uint16_t textColor, lv_opa_t opa) {
+  if (!label) return;
+  lv_obj_set_style_text_color(label, lvColor(textLiftColor(textColor)), 0);
+  lv_obj_set_style_text_opa(label, opa, 0);
+  lv_obj_set_style_text_letter_space(label, 0, 0);
+}
+
+static void setPremiumLabelText(lv_obj_t *label, lv_obj_t *shadow, const char *text) {
+  if (shadow) lv_label_set_text(shadow, text);
+  if (label) lv_label_set_text(label, text);
 }
 
 #if CODE_PET_LVGL_TFT_SWAP_RB
@@ -496,7 +543,14 @@ static String displayStateLabel() {
 
 static int petBob() {
   if (pet.state == "sleeping") return 1;
-  if (pet.state == "thinking") return (frameIndex % 3) - 1;
+  if (pet.state == "thinking") {
+    switch (frameIndex % 4) {
+      case 0: return -4;
+      case 1: return -1;
+      case 2: return 3;
+      default: return -1;
+    }
+  }
   if (pet.state == "working" || pet.state == "typing" || pet.state == "building") return (frameIndex % 2) ? -3 : 0;
   if (pet.state == "juggling") return (frameIndex % 4) - 2;
   return (frameIndex % 2) ? -1 : 0;
@@ -583,11 +637,24 @@ static void ensureLvglUi() {
   lvImage = lv_img_create(lvRoot);
   lv_obj_align(lvImage, LV_ALIGN_CENTER, 0, 0);
 
+  lvHeaderShadow = lv_label_create(lvRoot);
+  lv_obj_set_width(lvHeaderShadow, headerWidth);
+  lv_label_set_long_mode(lvHeaderShadow, LV_LABEL_LONG_DOT);
+  lv_obj_set_style_text_font(lvHeaderShadow, LV_FONT_DEFAULT, 0);
+  lv_obj_align(lvHeaderShadow, LV_ALIGN_TOP_LEFT, 9, 7);
+
   lvHeader = lv_label_create(lvRoot);
   lv_obj_set_width(lvHeader, headerWidth);
   lv_label_set_long_mode(lvHeader, LV_LABEL_LONG_DOT);
   lv_obj_set_style_text_font(lvHeader, LV_FONT_DEFAULT, 0);
   lv_obj_align(lvHeader, LV_ALIGN_TOP_LEFT, 8, 6);
+
+  lvStatusShadow = lv_label_create(lvRoot);
+  lv_obj_set_width(lvStatusShadow, statusWidth);
+  lv_label_set_long_mode(lvStatusShadow, LV_LABEL_LONG_DOT);
+  lv_obj_set_style_text_align(lvStatusShadow, LV_TEXT_ALIGN_RIGHT, 0);
+  lv_obj_set_style_text_font(lvStatusShadow, LV_FONT_DEFAULT, 0);
+  lv_obj_align(lvStatusShadow, LV_ALIGN_TOP_RIGHT, -7, 7);
 
   lvStatus = lv_label_create(lvRoot);
   lv_obj_set_width(lvStatus, statusWidth);
@@ -601,6 +668,12 @@ static void ensureLvglUi() {
   lv_obj_set_size(lvFooterClip, footerWidth, 24);
   lv_obj_align(lvFooterClip, LV_ALIGN_BOTTOM_MID, 0, -3);
   lv_obj_clear_flag(lvFooterClip, LV_OBJ_FLAG_SCROLLABLE);
+
+  lvFooterShadow = lv_label_create(lvFooterClip);
+  lv_label_set_long_mode(lvFooterShadow, LV_LABEL_LONG_CLIP);
+  lv_obj_set_style_text_align(lvFooterShadow, LV_TEXT_ALIGN_LEFT, 0);
+  lv_obj_set_style_text_font(lvFooterShadow, LV_FONT_DEFAULT, 0);
+  lv_obj_align(lvFooterShadow, LV_ALIGN_LEFT_MID, 1, 1);
 
   lvFooter = lv_label_create(lvFooterClip);
   lv_label_set_long_mode(lvFooter, LV_LABEL_LONG_CLIP);
@@ -647,11 +720,24 @@ static void ensureLvglUi() {
   lv_obj_clear_flag(lvLoadPanel, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_add_flag(lvLoadPanel, LV_OBJ_FLAG_HIDDEN);
 
+  lvLoadTitleShadow = lv_label_create(lvLoadPanel);
+  lv_obj_set_width(lvLoadTitleShadow, loadTitleWidth);
+  lv_label_set_long_mode(lvLoadTitleShadow, LV_LABEL_LONG_DOT);
+  lv_obj_set_style_text_font(lvLoadTitleShadow, LV_FONT_DEFAULT, 0);
+  lv_obj_align(lvLoadTitleShadow, LV_ALIGN_TOP_LEFT, 1, 0);
+
   lvLoadTitle = lv_label_create(lvLoadPanel);
   lv_obj_set_width(lvLoadTitle, loadTitleWidth);
   lv_label_set_long_mode(lvLoadTitle, LV_LABEL_LONG_DOT);
   lv_obj_set_style_text_font(lvLoadTitle, LV_FONT_DEFAULT, 0);
   lv_obj_align(lvLoadTitle, LV_ALIGN_TOP_LEFT, 0, -1);
+
+  lvLoadPercentShadow = lv_label_create(lvLoadPanel);
+  lv_obj_set_width(lvLoadPercentShadow, 46);
+  lv_label_set_long_mode(lvLoadPercentShadow, LV_LABEL_LONG_DOT);
+  lv_obj_set_style_text_align(lvLoadPercentShadow, LV_TEXT_ALIGN_RIGHT, 0);
+  lv_obj_set_style_text_font(lvLoadPercentShadow, LV_FONT_DEFAULT, 0);
+  lv_obj_align(lvLoadPercentShadow, LV_ALIGN_TOP_RIGHT, 1, 0);
 
   lvLoadPercent = lv_label_create(lvLoadPanel);
   lv_obj_set_width(lvLoadPercent, 46);
@@ -694,6 +780,7 @@ static uint8_t dynamicPersonaProgressPercent() {
 
 static void setFooterTickerX(void *obj, int32_t value) {
   lv_obj_set_x(static_cast<lv_obj_t *>(obj), value);
+  if (lvFooterShadow && obj == lvFooter) lv_obj_set_x(lvFooterShadow, value + 1);
 }
 
 static void finishFooterTicker(lv_anim_t *anim) {
@@ -711,10 +798,14 @@ static void updateFooterTicker(const String &text, bool connected) {
     lvFooterTickerDone = false;
     lv_obj_clear_flag(lvFooterClip, LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_width(lvFooter, lv_obj_get_width(lvFooterClip));
+    if (lvFooterShadow) lv_obj_set_width(lvFooterShadow, lv_obj_get_width(lvFooterClip));
     lv_label_set_long_mode(lvFooter, LV_LABEL_LONG_DOT);
+    if (lvFooterShadow) lv_label_set_long_mode(lvFooterShadow, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(lvFooter, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_text(lvFooter, CODE_PET_DISCONNECTED_LABEL);
+    if (lvFooterShadow) lv_obj_set_style_text_align(lvFooterShadow, LV_TEXT_ALIGN_CENTER, 0);
+    setPremiumLabelText(lvFooter, lvFooterShadow, CODE_PET_DISCONNECTED_LABEL);
     lv_obj_align(lvFooter, LV_ALIGN_CENTER, 0, 0);
+    if (lvFooterShadow) lv_obj_align(lvFooterShadow, LV_ALIGN_CENTER, 1, 1);
     return;
   }
 
@@ -736,10 +827,14 @@ static void updateFooterTicker(const String &text, bool connected) {
   lvFooterTickerDone = false;
   lv_obj_clear_flag(lvFooterClip, LV_OBJ_FLAG_HIDDEN);
   lv_obj_set_width(lvFooter, LV_SIZE_CONTENT);
+  if (lvFooterShadow) lv_obj_set_width(lvFooterShadow, LV_SIZE_CONTENT);
   lv_label_set_long_mode(lvFooter, LV_LABEL_LONG_CLIP);
+  if (lvFooterShadow) lv_label_set_long_mode(lvFooterShadow, LV_LABEL_LONG_CLIP);
   lv_obj_set_style_text_align(lvFooter, LV_TEXT_ALIGN_LEFT, 0);
-  lv_label_set_text(lvFooter, text.c_str());
+  if (lvFooterShadow) lv_obj_set_style_text_align(lvFooterShadow, LV_TEXT_ALIGN_LEFT, 0);
+  setPremiumLabelText(lvFooter, lvFooterShadow, text.c_str());
   lv_obj_update_layout(lvFooter);
+  if (lvFooterShadow) lv_obj_update_layout(lvFooterShadow);
 
   int16_t clipWidth = lv_obj_get_width(lvFooterClip);
   int16_t textWidth = lv_obj_get_width(lvFooter);
@@ -751,6 +846,10 @@ static void updateFooterTicker(const String &text, bool connected) {
 
   lv_obj_set_y(lvFooter, 1);
   lv_obj_set_x(lvFooter, startX);
+  if (lvFooterShadow) {
+    lv_obj_set_y(lvFooterShadow, 2);
+    lv_obj_set_x(lvFooterShadow, startX + 1);
+  }
 
   lv_anim_t anim;
   lv_anim_init(&anim);
@@ -786,32 +885,37 @@ static bool renderPersonaWithLvgl(uint16_t bg, uint16_t header, uint16_t panel, 
   lv_obj_set_style_bg_opa(lvRoot, LV_OPA_COVER, 0);
 
   const bool night = isNightTheme();
-  const uint16_t labelInk = night ? rgb565(255, 255, 255) : ink;
-  const uint16_t labelMuted = night ? rgb565(190, 198, 209) : muted;
+  const uint16_t labelInk = night ? rgb565(255, 255, 255) : rgb565(30, 40, 54);
+  const uint16_t labelMuted = night ? rgb565(232, 238, 248) : rgb565(38, 49, 66);
   const uint16_t loadPanelBg = night ? rgb565(8, 10, 14) : panel;
   const uint16_t loadTrackBg = night ? rgb565(36, 42, 54) : rgb565(224, 230, 238);
-  lv_obj_set_style_text_color(lvHeader, lvColor(labelInk), 0);
-  lv_obj_set_style_text_color(lvStatus, lvColor(accent), 0);
-  lv_obj_set_style_text_color(lvFooter, lvColor(labelMuted), 0);
+  stylePremiumLabel(lvHeader, labelInk);
+  stylePremiumShadow(lvHeaderShadow, labelInk, LV_OPA_40);
+  stylePremiumLabel(lvStatus, accent);
+  stylePremiumShadow(lvStatusShadow, accent, LV_OPA_40);
+  stylePremiumLabel(lvFooter, labelMuted);
+  stylePremiumShadow(lvFooterShadow, labelMuted, LV_OPA_40);
   lv_obj_set_style_bg_color(lvLoadPanel, lvColor(loadPanelBg), 0);
   lv_obj_set_style_bg_opa(lvLoadPanel, LV_OPA_COVER, 0);
   lv_obj_set_style_border_color(lvLoadPanel, lvColor(accent), 0);
-  lv_obj_set_style_text_color(lvLoadTitle, lvColor(labelInk), 0);
-  lv_obj_set_style_text_color(lvLoadPercent, lvColor(accent), 0);
+  stylePremiumLabel(lvLoadTitle, labelInk);
+  stylePremiumShadow(lvLoadTitleShadow, labelInk, LV_OPA_50);
+  stylePremiumLabel(lvLoadPercent, accent);
+  stylePremiumShadow(lvLoadPercentShadow, accent, LV_OPA_50);
   lv_obj_set_style_bg_color(lvLoadTrack, lvColor(loadTrackBg), 0);
   lv_obj_set_style_bg_opa(lvLoadTrack, LV_OPA_COVER, 0);
   lv_obj_set_style_bg_color(lvLoadFill, lvColor(accent), 0);
   lv_obj_set_style_bg_opa(lvLoadFill, LV_OPA_COVER, 0);
-  lv_obj_set_style_text_color(lvFooter, lvColor(labelMuted), 0);
-  lv_label_set_text(lvHeader, connected ? cleanText(pet.agent, 22).c_str() : "");
+  String headerText = connected ? cleanText(pet.agent, 22) : "";
+  setPremiumLabelText(lvHeader, lvHeaderShadow, headerText.c_str());
   String statusText = connected ? cleanText(imageLoading ? String("Sync ") + String(imageProgress) + "%" : displayStateLabel(), 20) : "";
-  lv_label_set_text(lvStatus, statusText.c_str());
+  setPremiumLabelText(lvStatus, lvStatusShadow, statusText.c_str());
   String footer = connected ? cleanText(pet.output, CODE_PET_OUTPUT_MAX_CHARS) : String(CODE_PET_DISCONNECTED_LABEL);
   updateFooterTicker(footer, connected);
   if (imageLoading) {
     String progressText = String(imageProgress) + "%";
-    lv_label_set_text(lvLoadTitle, "Syncing");
-    lv_label_set_text(lvLoadPercent, progressText.c_str());
+    setPremiumLabelText(lvLoadTitle, lvLoadTitleShadow, "Syncing");
+    setPremiumLabelText(lvLoadPercent, lvLoadPercentShadow, progressText.c_str());
     const int16_t trackWidth = lv_obj_get_width(lvLoadTrack);
     int16_t fillWidth = (trackWidth * imageProgress) / 100;
     if (fillWidth < 1) fillWidth = 1;
@@ -835,7 +939,9 @@ static bool renderPersonaWithLvgl(uint16_t bg, uint16_t header, uint16_t panel, 
   lv_obj_align(lvImage, LV_ALIGN_CENTER, 0, connected ? petBob() : ((frameIndex % 2) ? -1 : 0));
   lv_obj_clear_flag(lvImage, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(lvFallback, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_move_foreground(lvHeaderShadow);
   lv_obj_move_foreground(lvHeader);
+  lv_obj_move_foreground(lvStatusShadow);
   lv_obj_move_foreground(lvStatus);
   lv_obj_move_foreground(lvFooterClip);
   if (imageLoading) lv_obj_move_foreground(lvLoadPanel);
@@ -926,6 +1032,138 @@ static void clearDynamicPersonaFrame() {
   dynamicPersonaLastProgressPercent = 0;
   dynamicPersonaRleIndex = 0;
 }
+
+#if defined(ESP32)
+static bool ensureDynamicPersonaStore() {
+  if (dynamicPersonaStoreMounted) return true;
+  dynamicPersonaStoreMounted = SPIFFS.begin(true);
+  return dynamicPersonaStoreMounted;
+}
+
+static bool writeDynamicPersonaFile(const char *tmpPath, const char *path, const uint8_t *data, size_t size) {
+  if (!ensureDynamicPersonaStore()) return false;
+  SPIFFS.remove(tmpPath);
+  fs::File file = SPIFFS.open(tmpPath, FILE_WRITE);
+  if (!file) return false;
+  size_t written = file.write(data, size);
+  file.close();
+  if (written != size) {
+    SPIFFS.remove(tmpPath);
+    return false;
+  }
+  SPIFFS.remove(path);
+  return SPIFFS.rename(tmpPath, path);
+}
+
+static bool readDynamicPersonaFile(const char *path, uint8_t *data, size_t size) {
+  if (!ensureDynamicPersonaStore()) return false;
+  fs::File file = SPIFFS.open(path, FILE_READ);
+  if (!file) return false;
+  if (file.size() != size) {
+    file.close();
+    return false;
+  }
+  size_t read = file.read(data, size);
+  file.close();
+  return read == size;
+}
+
+static void saveDynamicPersonaFrame() {
+  if (!dynamicPersonaReady || !dynamicPersonaSlug.length()) return;
+  if (!ensureDynamicPersonaStore()) return;
+
+  uint8_t count = dynamicPersonaFrameCount;
+  if (count < 1) count = 1;
+  if (count > CODE_PET_DYNAMIC_PERSONA_MAX_FRAMES) count = CODE_PET_DYNAMIC_PERSONA_MAX_FRAMES;
+  for (uint8_t i = 0; i < count; i++) {
+    if (!writeDynamicPersonaFile(DYNAMIC_PERSONA_FRAME_TMP_PATHS[i],
+                                 DYNAMIC_PERSONA_FRAME_PATHS[i],
+                                 dynamicPersonaPixels[i],
+                                 CODE_PET_DYNAMIC_PERSONA_BYTES)) {
+      SPIFFS.remove(DYNAMIC_PERSONA_META_PATH);
+      return;
+    }
+  }
+
+  JsonDocument doc;
+  doc["v"] = 1;
+  doc["w"] = CODE_PET_DYNAMIC_PERSONA_WIDTH;
+  doc["h"] = CODE_PET_DYNAMIC_PERSONA_HEIGHT;
+  doc["z"] = CODE_PET_DYNAMIC_PERSONA_BYTES;
+  doc["fc"] = count;
+  doc["p"] = dynamicPersonaSlug;
+  doc["d"] = pet.personaName;
+  doc["k"] = pet.personaKind;
+  doc["u"] = pet.spriteUrl;
+  doc["th"] = pet.theme;
+
+  SPIFFS.remove(DYNAMIC_PERSONA_META_TMP_PATH);
+  fs::File meta = SPIFFS.open(DYNAMIC_PERSONA_META_TMP_PATH, FILE_WRITE);
+  if (!meta) return;
+  bool ok = serializeJson(doc, meta) > 0;
+  meta.close();
+  if (!ok) {
+    SPIFFS.remove(DYNAMIC_PERSONA_META_TMP_PATH);
+    return;
+  }
+  SPIFFS.remove(DYNAMIC_PERSONA_META_PATH);
+  SPIFFS.rename(DYNAMIC_PERSONA_META_TMP_PATH, DYNAMIC_PERSONA_META_PATH);
+}
+
+static void loadDynamicPersonaFrame() {
+  if (!ensureDynamicPersonaStore()) return;
+  fs::File meta = SPIFFS.open(DYNAMIC_PERSONA_META_PATH, FILE_READ);
+  if (!meta) return;
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, meta);
+  meta.close();
+  if (error) return;
+
+  int version = doc["v"] | 0;
+  int width = doc["w"] | 0;
+  int height = doc["h"] | 0;
+  uint32_t size = doc["z"] | 0;
+  int frameCount = doc["fc"] | 1;
+  String slug = cleanText(String(doc["p"] | ""), 48);
+  if (version != 1 ||
+      !slug.length() ||
+      width != CODE_PET_DYNAMIC_PERSONA_WIDTH ||
+      height != CODE_PET_DYNAMIC_PERSONA_HEIGHT ||
+      size != CODE_PET_DYNAMIC_PERSONA_BYTES ||
+      frameCount < 1 ||
+      frameCount > CODE_PET_DYNAMIC_PERSONA_MAX_FRAMES) {
+    return;
+  }
+
+  for (uint8_t i = 0; i < static_cast<uint8_t>(frameCount); i++) {
+    if (!readDynamicPersonaFile(DYNAMIC_PERSONA_FRAME_PATHS[i], dynamicPersonaPixels[i], CODE_PET_DYNAMIC_PERSONA_BYTES)) return;
+  }
+
+  dynamicPersonaReady = true;
+  dynamicPersonaReceiving = false;
+  dynamicPersonaShowLoading = true;
+  dynamicPersonaSlug = slug;
+  dynamicPersonaTransferSlug = "";
+  dynamicPersonaFrameCount = static_cast<uint8_t>(frameCount);
+  dynamicPersonaTransferFrameCount = dynamicPersonaFrameCount;
+  dynamicPersonaReceivedFrameMask = (1U << dynamicPersonaFrameCount) - 1U;
+  dynamicPersonaExpectedSeq = 0;
+  dynamicPersonaReceived = 0;
+  dynamicPersonaLastProgressPercent = 100;
+  dynamicPersonaRleIndex = 0;
+
+  pet.personaSlug = slug;
+  pet.personaName = cleanText(String(doc["d"] | ""), 48);
+  if (!pet.personaName.length()) pet.personaName = slug;
+  pet.personaKind = cleanText(String(doc["k"] | ""), 24);
+  pet.spriteUrl = String(doc["u"] | "");
+  String storedTheme = cleanText(String(doc["th"] | ""), 12);
+  pet.theme = (storedTheme == "night" || storedTheme == "dark") ? storedTheme : "day";
+}
+#else
+static void saveDynamicPersonaFrame() {}
+static void loadDynamicPersonaFrame() {}
+#endif
 
 static void abortDynamicPersonaTransfer() {
   dynamicPersonaReceiving = false;
@@ -1087,6 +1325,7 @@ static void applyDynamicPersonaPayload(JsonVariantConst src) {
         dynamicPersonaFrameCount = dynamicPersonaTransferFrameCount;
         dynamicPersonaTransferSlug = "";
         dynamicPersonaLastProgressPercent = 100;
+        saveDynamicPersonaFrame();
       }
       markDirty();
     } else {
@@ -1124,18 +1363,36 @@ static void clearDisconnectedPetState() {
   markDirty();
 }
 
+static String normalizePacketState(const String &state) {
+  String clean = cleanText(state, 24);
+  if (clean == "permission" || clean == "codex-permission") return "notification";
+  if (clean == "idle" || clean == "thinking" || clean == "working" || clean == "typing" ||
+      clean == "building" || clean == "juggling" || clean == "attention" ||
+      clean == "notification" || clean == "error" || clean == "sweeping" ||
+      clean == "sleeping") {
+    return clean;
+  }
+  return "idle";
+}
+
 static void applyPacket(JsonVariantConst src) {
-  String nextState = String(src["s"] | src["state"] | "idle");
+  String nextState = normalizePacketState(String(src["s"] | src["state"] | "idle"));
   String nextStateLabel = String(src["sl"] | src["stateLabel"] | "");
   String nextAgent = String(src["a"] | src["agentName"] | src["agent"] | "agent");
   String nextEvent = String(src["e"] | src["event"] | "");
   String nextTitle = String(src["m"] | src["title"] | "");
   String nextOutput = String(src["o"] | src["output"] | "");
-  String nextPersonaSlug = String(src["p"] | src["persona"]["slug"] | "lulu");
-  String nextPersonaName = String(src["d"] | src["persona"]["displayName"] | "Lulu");
-  String nextPersonaKind = String(src["k"] | src["persona"]["kind"] | "");
-  String nextSpriteUrl = String(src["u"] | src["persona"]["spritesheetUrl"] | "");
-  String nextTheme = String(src["th"] | src["theme"] | "day");
+  JsonVariantConst persona = src["persona"];
+  bool hasPersonaFields = !src["p"].isNull() || !src["d"].isNull() ||
+                           !src["k"].isNull() || !src["u"].isNull() ||
+                           !persona["slug"].isNull() || !persona["displayName"].isNull() ||
+                           !persona["kind"].isNull() || !persona["spritesheetUrl"].isNull();
+  String nextPersonaSlug = hasPersonaFields ? String(src["p"] | persona["slug"] | "lulu") : pet.personaSlug;
+  String nextPersonaName = hasPersonaFields ? String(src["d"] | persona["displayName"] | "Lulu") : pet.personaName;
+  String nextPersonaKind = hasPersonaFields ? String(src["k"] | persona["kind"] | "") : pet.personaKind;
+  String nextSpriteUrl = hasPersonaFields ? String(src["u"] | persona["spritesheetUrl"] | "") : pet.spriteUrl;
+  bool hasTheme = !src["th"].isNull() || !src["theme"].isNull();
+  String nextTheme = hasTheme ? String(src["th"] | src["theme"] | "day") : pet.theme;
   int nextActiveCount = src["n"] | src["activeCount"] | 0;
 
   bool changed = nextState != pet.state || nextStateLabel != pet.stateLabel ||
@@ -1185,7 +1442,7 @@ static void applyPayload(const String &payload) {
     JsonArray pets = doc["pets"].as<JsonArray>();
     JsonVariantConst selected;
     for (JsonVariantConst item : pets) {
-      String state = String(item["state"] | item["packet"]["s"] | "idle");
+      String state = normalizePacketState(String(item["state"] | item["packet"]["s"] | "idle"));
       if (state != "idle" && state != "sleeping") {
         selected = item;
         break;
@@ -1326,6 +1583,9 @@ static void pollBridge() {
 void setup() {
   Serial.begin(115200);
   displayBegin();
+#if defined(CODE_PET_USE_LVGL) && defined(CODE_PET_DISPLAY_TFT_ESPI)
+  loadDynamicPersonaFrame();
+#endif
 #if defined(CODE_PET_STATUS_PIXEL)
   statusPixel.begin();
   statusPixel.clear();

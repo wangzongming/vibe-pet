@@ -1360,7 +1360,6 @@ function createMainWindow() {
 
   win.webContents.once("did-finish-load", () => {
     broadcastState({ type: "snapshot", at: Date.now(), ...hub.getSnapshot() });
-    win.webContents.send("code-pet:bridge-info", bridgeInfo);
   });
 
   win.on("closed", () => {
@@ -1373,7 +1372,6 @@ function createMainWindow() {
 
 function setupIpc() {
   ipcMain.handle("code-pet:get-snapshot", () => hub.getSnapshot());
-  ipcMain.handle("code-pet:get-bridge-info", () => bridgeInfo);
   ipcMain.handle("code-pet:get-github-stars", () => getGitHubStars());
   ipcMain.handle("code-pet:get-petdex-pets", (_event, options = {}) => getPetdexPets(options));
   ipcMain.handle("code-pet:get-firmware-targets", () => firmwareTargetList());
@@ -1383,17 +1381,6 @@ function setupIpc() {
   ipcMain.handle("code-pet:get-analytics-config", (event) => {
     if (!isMainWindow(event.sender)) return { enabled: false, provider: ANALYTICS_PROVIDER, reason: "not_main_window" };
     return analyticsConfig();
-  });
-  ipcMain.handle("code-pet:test-state", (_event, state) => {
-    hub.upsert({
-      agentId: "test",
-      agentName: "Test",
-      sessionId: "manual",
-      state: state || "thinking",
-      event: "ManualTest",
-      title: "manual test",
-    });
-    return hub.getSnapshot();
   });
   ipcMain.handle("code-pet:choose-bluetooth-device", (_event, deviceId) => {
     return finishBluetoothSelection(deviceId || "");

@@ -259,26 +259,13 @@ const IDE_LOGOS = {
   },
 };
 
-const stateName = document.getElementById("stateName");
-const agentName = document.getElementById("agentName");
-const eventName = document.getElementById("eventName");
-const agentOutput = document.getElementById("agentOutput");
-const activeCount = document.getElementById("activeCount");
-const bridgePort = document.getElementById("bridgePort");
-const packetPreview = document.getElementById("packetPreview");
 const petGrid = document.getElementById("petGrid");
 const githubStarsCount = document.getElementById("githubStarsCount");
 const connectBtn = document.getElementById("connectBtn");
 const connectBtnLabel = document.getElementById("connectBtnLabel");
 const flashBtn = document.getElementById("flashBtn");
-const testBtn = document.getElementById("testBtn");
-const testState = document.getElementById("testState");
 const themeOptions = Array.from(document.querySelectorAll("[data-theme-option]"));
 const languageSelect = document.getElementById("languageSelect");
-const statusPanelBtn = document.getElementById("statusPanelBtn");
-const statusPanelModal = document.getElementById("statusPanelModal");
-const statusPanelCloseBtn = document.getElementById("statusPanelCloseBtn");
-const statusActions = document.querySelector(".status-actions");
 const devicePickerModal = document.getElementById("devicePickerModal");
 const devicePicker = document.getElementById("devicePicker");
 const deviceList = document.getElementById("deviceList");
@@ -364,6 +351,7 @@ let lastHardwarePersonaImageKey = "";
 let lastHardwarePersonaLoadingSignature = "";
 let latestHardwarePersonaRequestSignature = "";
 let hardwarePersonaTransferRevision = 0;
+let hardwareSendSequence = 0;
 let activeHardwarePersonaTransferId = "";
 let cancelledHardwarePersonaTransferIds = new Set();
 let firmwareTargets = [];
@@ -397,6 +385,7 @@ function resetHardwarePersonaTransferState() {
   activeHardwarePersonaTransferId = "";
   cancelledHardwarePersonaTransferIds.clear();
   hardwarePersonaTransferRevision++;
+  hardwareSendSequence++;
 }
 
 function sanitizeAnalyticsEventName(eventName) {
@@ -627,20 +616,6 @@ function setBluetoothSendFailed(err) {
     return;
   }
   setConnection("connection.sendFailed", false, { message });
-}
-
-function setStatusPanelOpen(open) {
-  if (!statusPanelModal) return;
-  statusPanelModal.hidden = !open;
-  if (statusPanelBtn) statusPanelBtn.setAttribute("aria-expanded", open ? "true" : "false");
-}
-
-function openStatusPanel() {
-  setStatusPanelOpen(true);
-}
-
-function closeStatusPanel() {
-  setStatusPanelOpen(false);
 }
 
 function currentBluetoothDeviceName() {
@@ -1881,23 +1856,12 @@ function compareHardwarePets(a = {}, b = {}) {
 }
 
 function syncDesktopPets(views) {
+  const pets = views.map(desktopPetPayloadForView);
+  latestHardwarePets = [...pets].sort(compareHardwarePets);
   if (!window.codePet || typeof window.codePet.syncDesktopPets !== "function") return;
   try {
-    const pets = views.map(desktopPetPayloadForView);
-    latestHardwarePets = [...pets].sort(compareHardwarePets);
     window.codePet.syncDesktopPets(pets);
   } catch {}
-}
-
-function renderOutput(aggregate) {
-  const packet = packetWithTheme(compactPacket(aggregate || latestSnapshot.aggregate));
-  stateName.textContent = stateLabel(packet.s);
-  stateName.title = packet.s || "idle";
-  agentName.textContent = packet.a || "agent";
-  eventName.textContent = packet.e || "-";
-  if (agentOutput) setAutoScrollingOutput(agentOutput, (aggregate && aggregate.output) || "-");
-  activeCount.textContent = String(packet.n || 0);
-  packetPreview.textContent = JSON.stringify(packet, null, 2);
 }
 
 function renderSnapshot(snapshot, options = {}) {
@@ -1908,14 +1872,9 @@ function renderSnapshot(snapshot, options = {}) {
   renderPetGrid(views);
   syncDesktopPets(views);
   renderPetPickerModal();
-  renderOutput(latestSnapshot.aggregate);
   if (options.send) {
     sendCurrent({ hardwarePetId: options.hardwarePetId }).catch(setBluetoothSendFailed);
   }
-}
-
-function renderBridgeInfo(info = {}) {
-  bridgePort.textContent = info.port ? `${info.host || "127.0.0.1"}:${info.port}` : "-";
 }
 
 function connectionErrorMessage(err) {
@@ -1950,7 +1909,6 @@ function applyTheme(theme) {
   }
   const views = buildViews(latestSnapshot);
   syncDesktopPets(views);
-  renderOutput(latestSnapshot.aggregate);
   if (stateCharacteristic) {
     sendCurrent().catch(setBluetoothSendFailed);
   }
@@ -1981,7 +1939,6 @@ function renderDevicePicker(devices = []) {
     return;
   }
 
-  setStatusPanelOpen(false);
   devicePickerModal.hidden = false;
   devicePicker.hidden = false;
   deviceList.replaceChildren();
@@ -2586,6 +2543,7 @@ async function sendCurrent(options = {}) {
   const hardwarePet = hardwarePetForSend(options);
   const packet = packetWithTheme(hardwarePet && hardwarePet.packet ? hardwarePet.packet : compactPacket(latestSnapshot.aggregate));
   packet.ts = Date.now();
+  const sendSequence = ++hardwareSendSequence;
   const transferSignature = hardwarePersonaTransferSignature(hardwarePet, packet);
   const loadingSignature = hardwarePersonaLoadingSignature(hardwarePet, packet);
   let transferRevision = hardwarePersonaTransferRevision;
@@ -2600,7 +2558,9 @@ async function sendCurrent(options = {}) {
     shouldShowPersonaLoading = !!transferSignature && loadingSignature !== lastHardwarePersonaLoadingSignature;
   }
   return enqueueBluetoothWrite(async () => {
+    if (sendSequence !== hardwareSendSequence) return;
     await writeBluetoothJson(packet);
+    if (sendSequence !== hardwareSendSequence) return;
     if (transferSignature && transferRevision !== hardwarePersonaTransferRevision) return;
     try {
       if (shouldSendPersonaFrame) {
@@ -2670,17 +2630,6 @@ flashBtn.addEventListener("click", () => {
   openFirmwareModal();
 });
 
-statusPanelBtn.addEventListener("click", (event) => {
-  event.stopPropagation();
-  if (statusPanelModal.hidden) openStatusPanel();
-  else closeStatusPanel();
-});
-
-statusPanelCloseBtn.addEventListener("click", (event) => {
-  event.stopPropagation();
-  closeStatusPanel();
-});
-
 document.addEventListener("click", (event) => {
   if (disconnectConfirmModal && !disconnectConfirmModal.hidden) {
     if (event.target === disconnectConfirmModal) closeDisconnectConfirm(false);
@@ -2690,10 +2639,6 @@ document.addEventListener("click", (event) => {
     if (event.target === devicePickerModal) cancelDeviceSelection();
     return;
   }
-  if (!statusPanelModal || statusPanelModal.hidden) return;
-  if (statusPanelModal.contains(event.target)) return;
-  if (statusActions && statusActions.contains(event.target)) return;
-  closeStatusPanel();
 });
 
 window.addEventListener("keydown", (event) => {
@@ -2706,11 +2651,6 @@ window.addEventListener("keydown", (event) => {
     cancelDeviceSelection();
     return;
   }
-  if (statusPanelModal && !statusPanelModal.hidden) closeStatusPanel();
-});
-
-testBtn.addEventListener("click", async () => {
-  await window.codePet.testState(testState.value);
 });
 
 cancelDeviceBtn.addEventListener("click", cancelDeviceSelection);
@@ -2854,8 +2794,6 @@ window.codePet.onBluetoothDevices((devices) => {
 
 window.codePet.onFirmwareFlash(handleFirmwareFlashEvent);
 
-window.codePet.onBridgeInfo(renderBridgeInfo);
-
 setInterval(() => {
   petdexFrame = (petdexFrame + 1) % 10000;
   updatePetdexSpriteFrames();
@@ -2868,7 +2806,4 @@ ensurePetdexPets();
 window.codePet.getSnapshot()
   .then((snapshot) => renderSnapshot(snapshot))
   .catch(() => renderSnapshot(latestSnapshot));
-window.codePet.getBridgeInfo()
-  .then(renderBridgeInfo)
-  .catch(() => renderBridgeInfo());
 scheduleAutoConnect(600);
